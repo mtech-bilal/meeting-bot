@@ -4,6 +4,8 @@ const logger = require('../../logger');
 // All selectors in one place — update here when Google changes their UI
 const SELECTORS = {
   nameInput: '[aria-label="Your name"], input[placeholder*="name" i], input[type="text"]',
+  cantJoinMessage: 'text=/you can.t join this (video call|meeting)/i, text=/this meeting has already ended/i, text=/invalid meeting code/i, text=/no permission/i',
+  signInPrompt: 'text=/sign in/i, text=/log in/i',
   micButton: 'button[aria-label*="microphone" i][aria-pressed="false"], button[aria-label*="Turn off mic" i]',
   cameraButton: 'button[aria-label*="camera" i][aria-pressed="false"], button[aria-label*="Turn off camera" i]',
   joinButton: 'button:has-text("Ask to join"), button:has-text("Join now"), button:has-text("Join")',
@@ -23,6 +25,17 @@ class GoogleMeetAdapter {
     logger.info('Joining meeting...');
 
     await this.page.goto(meetingUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Detect hard-fail screens before attempting to join
+    await this.page.waitForTimeout(2000);
+    const cantJoin = await this.page.locator(SELECTORS.cantJoinMessage).first().isVisible().catch(() => false);
+    if (cantJoin) {
+      throw new Error('Cannot join this meeting — it may require a Google account, be invalid, or have already ended');
+    }
+    const needsSignIn = await this.page.locator(SELECTORS.signInPrompt).first().isVisible().catch(() => false);
+    if (needsSignIn) {
+      throw new Error('This meeting requires a signed-in Google account — the bot cannot join without authentication');
+    }
 
     // Fill in bot display name
     try {
