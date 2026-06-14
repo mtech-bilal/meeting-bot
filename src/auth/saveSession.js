@@ -35,10 +35,24 @@ function copyDir(src, dst) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcPath = path.join(src, entry.name);
     const dstPath = path.join(dst, entry.name);
-    if (entry.isDirectory()) {
-      copyDir(srcPath, dstPath);
-    } else {
-      fs.copyFileSync(srcPath, dstPath);
+    try {
+      if (entry.isDirectory()) {
+        copyDir(srcPath, dstPath);
+      } else {
+        fs.copyFileSync(srcPath, dstPath);
+      }
+    } catch (err) {
+      if (err.code === 'EBUSY' || err.code === 'EPERM') {
+        // Cookies file locked = Chrome is still running
+        if (entry.name === 'Cookies') {
+          console.error('\n[Auth] ERROR: Chrome is still running and has locked the Cookies file.');
+          console.error('[Auth] Please fully quit Chrome (Task Manager → End all chrome.exe processes) and run again.\n');
+          process.exit(1);
+        }
+        // Skip other locked files silently
+      } else {
+        throw err;
+      }
     }
   }
 }
