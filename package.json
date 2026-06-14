@@ -1,0 +1,19 @@
+{
+  "name": "meeting-bot",
+  "version": "1.0.0",
+  "description": "Self-hosted terminal meeting bot with audio recording and transcription",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "jest --testEnvironment=node"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.5.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.44.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
