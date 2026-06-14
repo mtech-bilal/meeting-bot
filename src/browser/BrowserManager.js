@@ -34,6 +34,9 @@ class BrowserManager {
       '--disable-setuid-sandbox',
       '--disable-gpu',
       '--disable-dev-shm-usage',
+      '--no-restore-last-session',   // don't restore previous tabs
+      '--no-first-run',              // skip first-run setup screens
+      '--no-default-browser-check',
     ];
 
     if (isLinux) {
