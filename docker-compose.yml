@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Persist recordings to host machine
+      - ./recordings:/app/recordings
+      # Mount .env from host (never bake secrets into image)
+      - ./.env:/app/.env:ro
+    shm_size: '2gb'
+    # Pass meeting URL via environment variable
+    # Usage: MEETING_URL="https://meet.google.com/abc-defg-hij" docker compose up
+    environment:
+      - MEETING_URL=${MEETING_URL:-}
+    command: >
+      sh -c 'node src/bot.js "$$MEETING_URL"'
