@@ -36,20 +36,21 @@ class BrowserManager {
       '--disable-dev-shm-usage',
     ];
 
-    // On Linux (Docker), send silence as mic so no real audio is captured from input
     if (isLinux) {
       args.push('--use-file-for-fake-audio-capture=/dev/zero');
     }
 
-    // Persistent context keeps cookies, localStorage, and browser history between runs
-    // Google treats this as a real returning user rather than a fresh automated browser
-    this.context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    // Use system Chrome on Windows/Mac (avoids Google bot detection on sign-in)
+    // Fall back to Playwright's Chromium on Linux/Docker where Chrome isn't installed
+    const launchOptions = {
       headless: config.headless,
       args,
       permissions: ['microphone', 'camera'],
       viewport: { width: 1280, height: 720 },
-    });
+      ...(isLinux ? {} : { channel: 'chrome' }),
+    };
 
+    this.context = await chromium.launchPersistentContext(PROFILE_DIR, launchOptions);
     this.page = await this.context.newPage();
 
     this.context.on('close', () => {
