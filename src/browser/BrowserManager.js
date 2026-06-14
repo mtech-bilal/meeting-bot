@@ -1,4 +1,7 @@
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const StealthPlugin = require('playwright-extra-plugin-stealth');
+
+chromium.use(StealthPlugin());
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
