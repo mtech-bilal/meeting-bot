@@ -47,13 +47,14 @@ class AudioRecorder extends EventEmitter {
         logger.info('Recording stopped');
         return resolve();
       }
-      this.process.on('close', () => {
+      const proc = this.process;
+      this.process = null;
+      proc.on('close', () => {
         logger.info('Recording stopped');
         resolve();
       });
       // SIGINT causes FFmpeg to finalize the WAV header cleanly before exit
-      this.process.kill('SIGINT');
-      this.process = null;
+      proc.kill('SIGINT');
     });
   }
 

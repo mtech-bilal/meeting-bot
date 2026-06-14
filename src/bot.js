@@ -53,10 +53,10 @@ async function main() {
     await meeting.join();
     await meeting.waitForAdmission();
 
-    recorder.startRecording(wavPath);
     recorder.on('recorder:error', (err) => {
       logger.error(`Recorder error: ${err.message}`);
     });
+    recorder.startRecording(wavPath);
 
     const endReason = await meeting.detectEnd();
     logger.info(`Meeting ended (reason: ${endReason})`);

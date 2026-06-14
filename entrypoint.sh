@@ -12,7 +12,7 @@ pulseaudio --daemonize --exit-idle-time=-1 --allow-exit=false
 sleep 1
 
 # Create a virtual null audio sink — browser sends meeting audio here
-pactl load-module module-null-sink \n  sink_name=Virtual_Speaker \n  sink_properties=device.description="Virtual_Speaker"
+pactl load-module module-null-sink sink_name=Virtual_Speaker sink_properties=device.description="Virtual_Speaker"
 
 # Set it as the system default so Chromium outputs to it automatically
 pactl set-default-sink Virtual_Speaker

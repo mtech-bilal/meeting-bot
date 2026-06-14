@@ -91,6 +91,8 @@ class GoogleMeetAdapter {
 
     return new Promise((resolve) => {
       const POLL_INTERVAL_MS = 5000;
+      const START_TIME = Date.now();
+      const PARTICIPANT_CHECK_DELAY_MS = 30000; // wait 30s before trusting participant count
 
       const interval = setInterval(async () => {
         try {
@@ -106,13 +108,16 @@ class GoogleMeetAdapter {
           }
 
           // Strategy 2: Everyone left — participant list is empty
-          const participantCount = await this.page.locator(SELECTORS.participantItem)
-            .count()
-            .catch(() => -1);
-          if (participantCount === 0) {
-            clearInterval(interval);
-            clearTimeout(maxTimer);
-            return resolve('empty-room');
+          // Only check after delay to avoid false positives right after joining
+          if (Date.now() - START_TIME > PARTICIPANT_CHECK_DELAY_MS) {
+            const participantCount = await this.page.locator(SELECTORS.participantItem)
+              .count()
+              .catch(() => -1);
+            if (participantCount === 0) {
+              clearInterval(interval);
+              clearTimeout(maxTimer);
+              return resolve('empty-room');
+            }
           }
         } catch {
           // Page navigated away — treat as meeting ended
