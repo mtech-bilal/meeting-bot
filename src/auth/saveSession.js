@@ -1,99 +1,159 @@
 /**
- * Copies your existing Chrome session to the bot's profile directory.
+ * Auth script — opens REAL Chrome (not Playwright) for Google sign-in.
  *
- * You're already signed into Google in your regular Chrome — this script
- * copies that session so the bot can reuse it. No login screen needed.
+ * WHY REAL CHROME?
+ *   Google blocks sign-in attempts from automated/Playwright browsers with
+ *   "This browser or app may not be secure". Real Chrome bypasses this.
+ *   The bot then reuses the same Chrome profile directory, so DPAPI cookie
+ *   encryption works perfectly (same browser, same Windows user, same key).
  *
- * Requirements:
- *   - Google Chrome must be fully CLOSED before running this
- *   - You must be logged into Google in your regular Chrome
+ * HOW IT WORKS:
+ *   1. Launches Chrome with --user-data-dir pointing to auth/chrome-profile/
+ *   2. You sign in to Google normally (no automation, no blocks)
+ *   3. Chrome saves the authenticated session in auth/chrome-profile/
+ *   4. The bot loads that same profile — Chrome decrypts its own cookies fine
+ *
+ * NOTE: Chrome may use "Default" or "Profile N" depending on how many
+ *   Chrome profiles you have. We auto-detect which one was used.
  *
  * Usage:
  *   npm run auth
  */
 
-const fs = require('fs');
+const { execSync, spawn } = require('child_process');
+const readline = require('readline');
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 
 const PROFILE_DIR = path.join(__dirname, '../../auth/chrome-profile');
+// Remove the old playwright-runtime dir if present — not needed with this approach
+const RUNTIME_DIR = path.join(PROFILE_DIR, 'playwright-runtime');
 
-function getChromeProfilePath() {
+function findChrome() {
   const platform = os.platform();
+
   if (platform === 'win32') {
-    return path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data');
+    const candidates = [
+      path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(process.env['PROGRAMFILES'] || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    throw new Error('Google Chrome not found. Install Chrome from https://www.google.com/chrome/');
   }
+
   if (platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+    const p = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (fs.existsSync(p)) return p;
+    throw new Error('Google Chrome not found at ' + p);
   }
+
   // Linux
-  return path.join(os.homedir(), '.config', 'google-chrome');
+  for (const cmd of ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium']) {
+    try { execSync(`which ${cmd}`); return cmd; } catch { /* try next */ }
+  }
+  throw new Error('Google Chrome / Chromium not found. Install with: sudo apt install google-chrome-stable');
 }
 
-function copyDir(src, dst) {
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const dstPath = path.join(dst, entry.name);
-    try {
-      if (entry.isDirectory()) {
-        copyDir(srcPath, dstPath);
-      } else {
-        fs.copyFileSync(srcPath, dstPath);
-      }
-    } catch (err) {
-      if (err.code === 'EBUSY' || err.code === 'EPERM') {
-        // Cookies file locked = Chrome is still running
-        if (entry.name === 'Cookies') {
-          console.error('\n[Auth] ERROR: Chrome is still running and has locked the Cookies file.');
-          console.error('[Auth] Please fully quit Chrome (Task Manager → End all chrome.exe processes) and run again.\n');
-          process.exit(1);
-        }
-        // Skip other locked files silently
-      } else {
-        throw err;
-      }
-    }
-  }
+function prompt(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
 }
 
 async function saveSession() {
-  const chromeSrc = getChromeProfilePath();
+  // Clean up old playwright-runtime dir — not used with new approach
+  if (fs.existsSync(RUNTIME_DIR)) {
+    fs.rmSync(RUNTIME_DIR, { recursive: true, force: true });
+    console.log('[Auth] Cleaned up old playwright-runtime directory.');
+  }
 
-  if (!fs.existsSync(chromeSrc)) {
-    console.error(`[Auth] Chrome profile not found at: ${chromeSrc}`);
-    console.error('[Auth] Make sure Google Chrome is installed and you have signed in to Google.');
+  // Remove old session.json — not used with new approach
+  const oldSession = path.join(PROFILE_DIR, 'session.json');
+  if (fs.existsSync(oldSession)) {
+    fs.rmSync(oldSession);
+    console.log('[Auth] Removed old session.json (no longer needed).');
+  }
+
+  let chromePath;
+  try {
+    chromePath = findChrome();
+  } catch (err) {
+    console.error(`[Auth] ${err.message}`);
     process.exit(1);
   }
 
-  console.log('[Auth] Reading Chrome profile from:', chromeSrc);
-  console.log('[Auth] IMPORTANT: Make sure all Chrome windows are fully closed first!');
-  console.log('[Auth] Copying session... (this may take a few seconds)');
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
-  // Copy the Default profile (contains cookies, localStorage, login data)
-  const defaultSrc = path.join(chromeSrc, 'Default');
-  const defaultDst = path.join(PROFILE_DIR, 'Default');
+  console.log('\n[Auth] Launching REAL Chrome for Google sign-in (no automation)...');
+  console.log('[Auth] Chrome will open at accounts.google.com');
+  console.log('[Auth] Sign in normally — Google will NOT block you here.\n');
 
-  if (!fs.existsSync(defaultSrc)) {
-    console.error('[Auth] Chrome Default profile not found. Open Chrome at least once and sign into Google first.');
+  // Launch real Chrome with our custom profile dir, no automation flags
+  const chromeProc = spawn(
+    chromePath,
+    [
+      `--user-data-dir=${PROFILE_DIR}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      'https://accounts.google.com',
+    ],
+    { detached: true, stdio: 'ignore' }
+  );
+  chromeProc.unref(); // let Chrome run independently
+
+  console.log('[Auth] Chrome is open. Please:');
+  console.log('  1. Sign in to your Google account (the one that has access to your meetings)');
+  console.log('  2. Wait until you can see your Google account page or Gmail');
+  console.log('  3. Come back here and press Enter\n');
+
+  await prompt('[Auth] Press Enter once you are signed in to Google...');
+
+  console.log('\n[Auth] Closing Chrome to flush the session to disk...');
+
+  // Kill Chrome so it writes all cookies/session data to disk before the bot reads them
+  if (os.platform() === 'win32') {
+    try { execSync('taskkill /F /IM chrome.exe /T', { stdio: 'ignore' }); } catch { /* already closed */ }
+  } else {
+    try { execSync('pkill -f chrome', { stdio: 'ignore' }); } catch { /* already closed */ }
+  }
+
+  // Wait a moment for Chrome to finish flushing
+  await new Promise(r => setTimeout(r, 2000));
+
+  // Auto-detect which profile Chrome used (Default, Profile 1, Profile 2, etc.)
+  // Chrome on Windows now stores cookies in <Profile>/Network/Cookies
+  const profileNames = ['Default', ...Array.from({length: 10}, (_, i) => `Profile ${i + 1}`)];
+  let detectedProfile = null;
+  for (const name of profileNames) {
+    // Try both old path (Default/Cookies) and new path (Default/Network/Cookies)
+    const oldPath = path.join(PROFILE_DIR, name, 'Cookies');
+    const newPath = path.join(PROFILE_DIR, name, 'Network', 'Cookies');
+    if (fs.existsSync(oldPath) || fs.existsSync(newPath)) {
+      detectedProfile = name;
+      break;
+    }
+  }
+
+  if (!detectedProfile) {
+    console.error('\n[Auth] ERROR: Session was not saved (no Cookies file found in any profile).');
+    console.error('[Auth] Make sure you signed in before pressing Enter and try again.\n');
     process.exit(1);
   }
 
-  // Clean destination to avoid stale data
-  if (fs.existsSync(PROFILE_DIR)) {
-    fs.rmSync(PROFILE_DIR, { recursive: true });
-  }
+  // Save which profile Chrome used so the bot knows where to look
+  const metaFile = path.join(PROFILE_DIR, 'bot-profile.json');
+  fs.writeFileSync(metaFile, JSON.stringify({ profileName: detectedProfile }, null, 2));
 
-  copyDir(defaultSrc, defaultDst);
-
-  // Copy Local State — contains the encryption key for cookies (required on Windows)
-  const localStateSrc = path.join(chromeSrc, 'Local State');
-  if (fs.existsSync(localStateSrc)) {
-    fs.copyFileSync(localStateSrc, path.join(PROFILE_DIR, 'Local State'));
-  }
-
-  console.log('\n[Auth] ✓ Chrome session copied to auth/chrome-profile/');
-  console.log('[Auth] Run the bot with: node src/bot.js <meeting-url>');
+  console.log(`\n[Auth] ✓ Google session saved (Chrome used profile: "${detectedProfile}")`);
+  console.log('[Auth] Run the bot with: node src/bot.js <meeting-url>\n');
 }
 
 saveSession().catch((err) => {
