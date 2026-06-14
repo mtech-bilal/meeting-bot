@@ -1,7 +1,11 @@
 const { chromium } = require('playwright');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 const logger = require('../logger');
+
+const SESSION_PATH = path.join(__dirname, '../../auth/session.json');
 
 class BrowserManager {
   constructor() {
@@ -33,9 +37,17 @@ class BrowserManager {
       args,
     });
 
+    const sessionExists = fs.existsSync(SESSION_PATH);
+    if (sessionExists) {
+      logger.info('Loading saved Google session...');
+    } else {
+      logger.warn('No saved session found — run "node src/auth/saveSession.js" first if the meeting requires a Google account');
+    }
+
     this.context = await this.browser.newContext({
       permissions: ['microphone', 'camera'],
       viewport: { width: 1280, height: 720 },
+      ...(sessionExists && { storageState: SESSION_PATH }),
     });
 
     this.page = await this.context.newPage();

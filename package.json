@@ -5,6 +5,7 @@
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
+    "auth": "node src/auth/saveSession.js",
     "test": "jest --testEnvironment=node"
   },
   "dependencies": {
