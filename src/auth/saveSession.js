@@ -1,66 +1,59 @@
 /**
  * One-time Google authentication script.
  *
- * Run this ONCE to log in to Google and save session cookies to disk.
- * The bot will load these cookies on every future run.
+ * Uses a persistent Chrome profile so Google doesn't flag it as a bot.
+ * Run this ONCE. The profile is saved to auth/chrome-profile/ and reused
+ * by the bot on every future run — no re-login needed.
  *
  * Usage:
- *   node src/auth/saveSession.js
- *
- * What it does:
- *   1. Opens a visible Chromium window
- *   2. Navigates to Google sign-in
- *   3. Waits for you to log in manually (up to 3 minutes)
- *   4. Saves cookies + storage state to auth/session.json
- *   5. Closes the browser
+ *   npm run auth
  */
 
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const path = require('path');
 
 chromium.use(StealthPlugin());
-const path = require('path');
-const fs = require('fs');
 
-const SESSION_PATH = path.join(__dirname, '../../auth/session.json');
+const PROFILE_DIR = path.join(__dirname, '../../auth/chrome-profile');
 
 async function saveSession() {
-  console.log('[Auth] Opening browser — please sign in to Google...');
+  console.log('[Auth] Opening browser — please sign in to your Google account...');
+  console.log('[Auth] Profile will be saved to:', PROFILE_DIR);
 
-  fs.mkdirSync(path.dirname(SESSION_PATH), { recursive: true });
-
-  const browser = await chromium.launch({
+  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+    ],
+    viewport: { width: 1280, height: 720 },
   });
 
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await context.newPage();
-
   await page.goto('https://accounts.google.com');
 
-  console.log('[Auth] Sign in to your Google account in the browser window.');
-  console.log('[Auth] You have 3 minutes. The script will save and close automatically once you reach the Google home page.');
+  console.log('[Auth] Sign in to Google in the browser window.');
+  console.log('[Auth] The script saves automatically once you reach the Google home page (up to 3 minutes).');
 
-  // Wait until the user reaches Google's home page (post-login)
   try {
-    await page.waitForURL(/myaccount\.google\.com|google\.com\/?$/, { timeout: 180000 });
+    await page.waitForURL(
+      (url) => url.hostname === 'myaccount.google.com' || (url.hostname === 'www.google.com' && !url.pathname.includes('signin')),
+      { timeout: 180000 }
+    );
   } catch {
-    // Also accept if they navigated to meet.google.com directly
     const url = page.url();
     if (!url.includes('google.com')) {
-      console.error('[Auth] Timed out waiting for login. Please try again.');
-      await browser.close();
+      console.error('[Auth] Timed out. Please run again and complete sign-in within 3 minutes.');
+      await context.close();
       process.exit(1);
     }
   }
 
-  // Save full browser state: cookies + localStorage + sessionStorage
-  await context.storageState({ path: SESSION_PATH });
-  await browser.close();
+  await context.close();
 
-  console.log(`[Auth] Session saved to: ${SESSION_PATH}`);
-  console.log('[Auth] You can now run the bot normally with: node src/bot.js <meeting-url>');
+  console.log('[Auth] Google session saved successfully!');
+  console.log('[Auth] Run the bot with: node src/bot.js <meeting-url>');
 }
 
 saveSession().catch((err) => {

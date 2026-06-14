@@ -3,3 +3,4 @@ recordings/*
 !recordings/.gitkeep
 .env
 auth/session.json
+auth/chrome-profile/

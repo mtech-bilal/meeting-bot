@@ -1,18 +1,17 @@
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-
-chromium.use(StealthPlugin());
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const logger = require('../logger');
 
-const SESSION_PATH = path.join(__dirname, '../../auth/session.json');
+chromium.use(StealthPlugin());
+
+const PROFILE_DIR = path.join(__dirname, '../../auth/chrome-profile');
 
 class BrowserManager {
   constructor() {
-    this.browser = null;
     this.context = null;
     this.page = null;
   }
@@ -21,6 +20,13 @@ class BrowserManager {
     logger.info('Launching browser...');
 
     const isLinux = os.platform() === 'linux';
+    const profileExists = fs.existsSync(PROFILE_DIR);
+
+    if (!profileExists) {
+      logger.warn('No Google session found — run "npm run auth" first to sign in');
+    } else {
+      logger.info('Loading saved Google session...');
+    }
 
     const args = [
       '--use-fake-ui-for-media-stream',
@@ -35,37 +41,27 @@ class BrowserManager {
       args.push('--use-file-for-fake-audio-capture=/dev/zero');
     }
 
-    this.browser = await chromium.launch({
+    // Persistent context keeps cookies, localStorage, and browser history between runs
+    // Google treats this as a real returning user rather than a fresh automated browser
+    this.context = await chromium.launchPersistentContext(PROFILE_DIR, {
       headless: config.headless,
       args,
-    });
-
-    const sessionExists = fs.existsSync(SESSION_PATH);
-    if (sessionExists) {
-      logger.info('Loading saved Google session...');
-    } else {
-      logger.warn('No saved session found — run "node src/auth/saveSession.js" first if the meeting requires a Google account');
-    }
-
-    this.context = await this.browser.newContext({
       permissions: ['microphone', 'camera'],
       viewport: { width: 1280, height: 720 },
-      ...(sessionExists && { storageState: SESSION_PATH }),
     });
 
     this.page = await this.context.newPage();
 
-    this.browser.on('disconnected', () => {
-      logger.error('Browser disconnected unexpectedly');
+    this.context.on('close', () => {
+      logger.error('Browser context closed unexpectedly');
     });
 
-    return { browser: this.browser, context: this.context, page: this.page };
+    return { context: this.context, page: this.page };
   }
 
   async close() {
-    if (this.browser) {
-      await this.browser.close().catch(() => {});
-      this.browser = null;
+    if (this.context) {
+      await this.context.close().catch(() => {});
       this.context = null;
       this.page = null;
     }
