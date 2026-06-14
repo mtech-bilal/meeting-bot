@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+function parseIntEnv(val, fallback) {
+  const n = parseInt(val || String(fallback), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 const REQUIRED = ['DEEPGRAM_API_KEY'];
 
 for (const key of REQUIRED) {
@@ -14,8 +19,8 @@ const config = Object.freeze({
   botName: process.env.BOT_NAME || 'Meeting Recorder Bot',
   headless: process.env.HEADLESS === 'true',
   deepgramModel: process.env.DEEPGRAM_MODEL || 'nova-2',
-  admissionTimeoutMs: parseInt(process.env.ADMISSION_TIMEOUT_MS || '120000', 10),
-  maxMeetingDurationMs: parseInt(process.env.MAX_MEETING_DURATION_MS || '7200000', 10),
+  admissionTimeoutMs: parseIntEnv(process.env.ADMISSION_TIMEOUT_MS, 120000),
+  maxMeetingDurationMs: parseIntEnv(process.env.MAX_MEETING_DURATION_MS, 7200000),
 });
 
 module.exports = config;

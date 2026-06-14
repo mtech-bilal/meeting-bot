@@ -8,6 +8,7 @@ describe('config', () => {
 
   afterEach(() => {
     process.env = originalEnv;
+    jest.restoreAllMocks();
   });
 
   it('exits when DEEPGRAM_API_KEY is missing', () => {
@@ -47,5 +48,14 @@ describe('config', () => {
     process.env.DEEPGRAM_API_KEY = 'test-key';
     const config = require('../src/config');
     expect(Object.isFrozen(config)).toBe(true);
+  });
+
+  it('falls back to default when numeric env var is not a valid number', () => {
+    process.env.DEEPGRAM_API_KEY = 'test-key';
+    process.env.ADMISSION_TIMEOUT_MS = 'not-a-number';
+
+    const config = require('../src/config');
+    expect(config.admissionTimeoutMs).toBe(120000);
+    expect(Number.isFinite(config.admissionTimeoutMs)).toBe(true);
   });
 });
