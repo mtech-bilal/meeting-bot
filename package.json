@@ -12,6 +12,7 @@
     "@deepgram/sdk": "^3.5.0",
     "dotenv": "^16.4.5",
     "playwright": "^1.44.0",
+    "playwright-extra": "^4.3.6",
     "winston": "^3.13.0"
   },
   "devDependencies": {
