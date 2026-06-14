@@ -1,60 +1,84 @@
 /**
- * One-time Google authentication script.
+ * Copies your existing Chrome session to the bot's profile directory.
  *
- * Uses your installed Google Chrome (not Playwright's Chromium) so Google
- * doesn't block the sign-in. The session is saved to auth/chrome-profile/
- * and reused by the bot on every future run.
+ * You're already signed into Google in your regular Chrome — this script
+ * copies that session so the bot can reuse it. No login screen needed.
  *
- * Requires: Google Chrome installed on your system.
- * Chrome must be fully closed before running this script.
+ * Requirements:
+ *   - Google Chrome must be fully CLOSED before running this
+ *   - You must be logged into Google in your regular Chrome
  *
  * Usage:
  *   npm run auth
  */
 
-const { chromium } = require('playwright');
+const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const PROFILE_DIR = path.join(__dirname, '../../auth/chrome-profile');
 
-async function saveSession() {
-  console.log('[Auth] Opening Google Chrome — please sign in to your Google account...');
-  console.log('[Auth] NOTE: Close all Chrome windows before running this script.');
-  console.log('[Auth] Profile will be saved to:', PROFILE_DIR);
+function getChromeProfilePath() {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data');
+  }
+  if (platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+  }
+  // Linux
+  return path.join(os.homedir(), '.config', 'google-chrome');
+}
 
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    channel: 'chrome',   // use system Chrome, not Playwright's Chromium
-    headless: false,
-    args: ['--no-sandbox'],
-    viewport: { width: 1280, height: 720 },
-  });
-
-  const page = await context.newPage();
-  await page.goto('https://accounts.google.com');
-
-  console.log('\n[Auth] Sign in to Google in the Chrome window.');
-  console.log('[Auth] The script saves automatically once you reach the Google home page.');
-  console.log('[Auth] You have 3 minutes.\n');
-
-  try {
-    await page.waitForURL(
-      (url) =>
-        url.hostname === 'myaccount.google.com' ||
-        (url.hostname === 'www.google.com' && !url.pathname.includes('signin')),
-      { timeout: 180000 }
-    );
-  } catch {
-    const url = page.url();
-    if (!url.includes('google.com')) {
-      console.error('[Auth] Timed out. Please run again and complete sign-in within 3 minutes.');
-      await context.close();
-      process.exit(1);
+function copyDir(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const dstPath = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(srcPath, dstPath);
+    } else {
+      fs.copyFileSync(srcPath, dstPath);
     }
   }
+}
 
-  await context.close();
+async function saveSession() {
+  const chromeSrc = getChromeProfilePath();
 
-  console.log('\n[Auth] ✓ Google session saved to auth/chrome-profile/');
+  if (!fs.existsSync(chromeSrc)) {
+    console.error(`[Auth] Chrome profile not found at: ${chromeSrc}`);
+    console.error('[Auth] Make sure Google Chrome is installed and you have signed in to Google.');
+    process.exit(1);
+  }
+
+  console.log('[Auth] Reading Chrome profile from:', chromeSrc);
+  console.log('[Auth] IMPORTANT: Make sure all Chrome windows are fully closed first!');
+  console.log('[Auth] Copying session... (this may take a few seconds)');
+
+  // Copy the Default profile (contains cookies, localStorage, login data)
+  const defaultSrc = path.join(chromeSrc, 'Default');
+  const defaultDst = path.join(PROFILE_DIR, 'Default');
+
+  if (!fs.existsSync(defaultSrc)) {
+    console.error('[Auth] Chrome Default profile not found. Open Chrome at least once and sign into Google first.');
+    process.exit(1);
+  }
+
+  // Clean destination to avoid stale data
+  if (fs.existsSync(PROFILE_DIR)) {
+    fs.rmSync(PROFILE_DIR, { recursive: true });
+  }
+
+  copyDir(defaultSrc, defaultDst);
+
+  // Copy Local State — contains the encryption key for cookies (required on Windows)
+  const localStateSrc = path.join(chromeSrc, 'Local State');
+  if (fs.existsSync(localStateSrc)) {
+    fs.copyFileSync(localStateSrc, path.join(PROFILE_DIR, 'Local State'));
+  }
+
+  console.log('\n[Auth] ✓ Chrome session copied to auth/chrome-profile/');
   console.log('[Auth] Run the bot with: node src/bot.js <meeting-url>');
 }
 
