@@ -1,3 +1,5 @@
+jest.mock('dotenv', () => ({ config: jest.fn() }));
+
 describe('config', () => {
   const originalEnv = process.env;
 
